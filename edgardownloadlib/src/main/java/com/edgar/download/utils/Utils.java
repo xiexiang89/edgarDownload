@@ -6,7 +6,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Build;
 
-import com.qida.download.DownloadLog;
+import com.edgar.download.DownloadLog;
 
 import java.io.Closeable;
 import java.io.IOException;
