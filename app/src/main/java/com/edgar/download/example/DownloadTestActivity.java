@@ -14,7 +14,6 @@ import com.edgar.download.DownloadManager;
 import com.edgar.download.DownloadRequest;
 import com.edgar.download.observe.DefaultDownloadListener;
 import com.edgar.download.task.AbsDownloadTask;
-import com.edgar.download.task.HttpDownloadTask;
 
 import java.io.File;
 
@@ -28,6 +27,7 @@ public class DownloadTestActivity extends AppCompatActivity implements View.OnCl
     private ProgressBar mDownloadProgressBar;
     private TextView mDownloadProgressText;
     private Button mStartDownload;
+    private Button mDeleteDownload;
     private DownloadManager mDownloadManager;
     private AbsDownloadTask downloadTask;
     private long mLastCurrentTime;
@@ -39,33 +39,50 @@ public class DownloadTestActivity extends AppCompatActivity implements View.OnCl
         mDownloadProgressBar = (ProgressBar) findViewById(R.id.download_progress);
         mDownloadProgressText = (TextView) findViewById(R.id.download_progress_text);
         mStartDownload = (Button) findViewById(R.id.start_download);
+        mDeleteDownload = (Button) findViewById(R.id.delete_download);
         mStartDownload.setOnClickListener(this);
+        mDeleteDownload.setOnClickListener(this);
         mDownloadManager = DownloadManager.getInstance(this);
     }
 
     @Override
     public void onClick(View v) {
-        if (downloadTask == null){
-            mLastCurrentTime = System.currentTimeMillis();
-            downloadTask = mDownloadManager.addDownloadTask(buildDownloadRequest());
-            downloadTask.setDownloadListener(new DefaultDownloadListener() {
-                @Override
-                public void onUpdateProgress(AbsDownloadTask downloadTask, long totalSize, long currentSize, int progress) {
-                    mDownloadProgressBar.setProgress(progress);
-                    String download =
-                            String.format("%s/s  已下载:%s",
-                                    Formatter.formatFileSize(DownloadTestActivity.this,makeSpeed(currentSize)),
-                                    Formatter.formatFileSize(DownloadTestActivity.this,currentSize));
-                    mStartDownload.setText(download);
-                    mDownloadProgressText.setText(String.format("下载进度:%s",progress));
+        switch (v.getId()){
+            case R.id.start_download:
+                if (downloadTask == null){
+                    mLastCurrentTime = System.currentTimeMillis();
+                    downloadTask = mDownloadManager.addDownloadTask(buildDownloadRequest());
+                    downloadTask.setDownloadListener(new DefaultDownloadListener() {
+                        @Override
+                        public void onUpdateProgress(AbsDownloadTask downloadTask, long totalSize, long currentSize, int progress) {
+                            mDownloadProgressBar.setProgress(progress);
+                            String download =
+                                    String.format("%s/s  已下载:%s",
+                                            Formatter.formatFileSize(DownloadTestActivity.this,makeSpeed(currentSize)),
+                                            Formatter.formatFileSize(DownloadTestActivity.this,currentSize));
+                            mStartDownload.setText(download);
+                            mDownloadProgressText.setText(String.format("下载进度:%s",progress));
+                        }
+
+                        @Override
+                        public void onCancel(AbsDownloadTask downloadTask, String url) {
+                            super.onCancel(downloadTask, url);
+                            mStartDownload.setText("开始下载");
+                            mDownloadProgressBar.setProgress(0);
+                            mDownloadProgressText.setText("0");
+                        }
+                    });
+                } else {
+                    if (downloadTask.isDownloading()){
+                        mDownloadManager.pauseDownload(downloadTask);
+                    } else {
+                        mDownloadManager.resumeDownloadTask(downloadTask);
+                    }
                 }
-            });
-        } else {
-            if (downloadTask.isDownloading()){
-                mDownloadManager.pauseDownload(downloadTask);
-            } else {
-                mDownloadManager.resumeDownloadTask(downloadTask);
-            }
+                break;
+            case R.id.delete_download:
+                mDownloadManager.removeDownload(downloadTask);
+                break;
         }
     }
 

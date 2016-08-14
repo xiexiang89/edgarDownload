@@ -9,6 +9,7 @@ import android.os.Build;
 import com.edgar.download.DownloadLog;
 
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 
 /**

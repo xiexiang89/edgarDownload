@@ -129,6 +129,7 @@ public class DownloadManager {
     }
 
     public void removeDownload(AbsDownloadTask downloadTask){
+        if (downloadTask == null) return;
         if(mAllDownloadList.contains(downloadTask)){
             mAllDownloadList.remove(downloadTask);
         }
@@ -145,6 +146,7 @@ public class DownloadManager {
     }
 
     public void pauseDownload(AbsDownloadTask downloadTask){
+        if (downloadTask == null) return;
         if(isTaskFinish(downloadTask)){
             return;
         }

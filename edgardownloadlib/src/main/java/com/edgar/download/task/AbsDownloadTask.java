@@ -229,8 +229,12 @@ public abstract class AbsDownloadTask implements Runnable{
     public void cancelDownload() {
         final int oldStatus = mDownloadTaskInfo.status;
         mDownloadTaskInfo.changeStatus(Status.CANCEL);
+        mDownloadTaskInfo.saveFilePath.delete();
+        mDownloadTaskInfo.progress = 0;
+        mDownloadTaskInfo.totalSize = 0;
+        mDownloadTaskInfo.currentSize = 0;
         onCancelDownload();
-        if (oldStatus == Status.WAIT){
+        if (oldStatus == Status.WAIT || oldStatus == Status.PAUSE){
             notifyCancel();
         }
     }
