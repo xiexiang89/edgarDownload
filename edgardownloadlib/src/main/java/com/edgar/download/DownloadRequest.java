@@ -5,13 +5,13 @@ package com.edgar.download;
  * 下载请求对象
  */
 public class DownloadRequest {
-    private String downloadUrl;
-    private String saveFilePath;
-    private long totalSize;
-    private long currentSize;
-    private int status;
-    private int maxRetryCount;
-    private int timeoutMs;
+    private final String downloadUrl;
+    private final String saveFilePath;
+    private final long totalSize;
+    private final long currentSize;
+    private final int status;
+    private final int maxRetryCount;
+    private final int timeoutMs;
 
     DownloadRequest(Builder builder){
         downloadUrl = builder.downloadUrl;
