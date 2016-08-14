@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.TimeUnit;
 
@@ -68,13 +67,13 @@ public class HttpDownloadTask extends AbsDownloadTask{
                     case HttpURLConnection.HTTP_OK:
                         //处理请求状态为200
                         parserOKHeader(response);
-                        checkStorageNotEnough(mDownloadRequest.getTotalSize());
+                        checkStorageNotEnough(getTotalSize());
                         transferData(response);
                         return;
                     case HttpURLConnection.HTTP_PARTIAL:
                         //处理请求状态为206，断点续传会返回该状态码.
-                        onRequestPartial(mDownloadRequest);
-                        checkStorageNotEnough(mDownloadRequest.getTotalSize());
+                        onRequestPartial();
+                        checkStorageNotEnough(getTotalSize());
                         transferData(response);
                         return;
                     case HttpURLConnection.HTTP_MOVED_PERM:
@@ -86,8 +85,8 @@ public class HttpDownloadTask extends AbsDownloadTask{
                         if(responseCode == HttpURLConnection.HTTP_MOVED_PERM
                                 || responseCode == HttpURLConnection.HTTP_MOVED_TEMP){
                             //重定向301,指向新的url下载
-                            mDownloadRequest.setDownloadUrl(location);
-                            onResourceMoved(mDownloadRequest);
+                            mDownloadTaskInfo.downloadUrl = location;
+                            onResourceMoved();
                             continue;
                         } else {
                             handlerDownloadFail(responseCode,responseMessage);
@@ -121,6 +120,15 @@ public class HttpDownloadTask extends AbsDownloadTask{
         }
     }
 
+    private void retry(int currentRetryCount,DownloadErrorException error) throws DownloadErrorException {
+        int currentTimeoutMs = getTimeoutMs();
+        currentTimeoutMs += (currentTimeoutMs * DownloadConstant.DEFAULT_BACKOFF_MULT);
+        mDownloadTaskInfo.timeoutMs = currentTimeoutMs;
+        if (!hasAttemptRemaining(currentRetryCount)) {
+            throw error;
+        }
+    }
+
     private void addRequestHeader(Request.Builder builder){
         builder.addHeader(ACCEPT_ENCODING, "identity");
         long currentSize = getCurrentSize();
@@ -130,35 +138,26 @@ public class HttpDownloadTask extends AbsDownloadTask{
     }
 
     private void setTimeOut(){
-        DownloadRequest downloadRequest = getDownloadRequest();
-        mOkHttpBuilder.connectTimeout(downloadRequest.getTimeoutMs(), TimeUnit.MILLISECONDS)
-                .readTimeout(downloadRequest.getTimeoutMs(),TimeUnit.MILLISECONDS);
-    }
-
-    private void retry(int currentRetryCount,DownloadErrorException error) throws DownloadErrorException {
-        int currentTimeoutMs = mDownloadRequest.getTimeoutMs();
-        currentTimeoutMs += (currentTimeoutMs * DownloadConstant.DEFAULT_BACKOFF_MULT);
-        mDownloadRequest.setTimeoutMs(currentTimeoutMs);
-        if (!hasAttemptRemaining(currentRetryCount)) {
-            throw error;
-        }
+        final int timeoutMs = getTimeoutMs();
+        mOkHttpBuilder.connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMs,TimeUnit.MILLISECONDS);
     }
 
     private boolean hasAttemptRemaining(int currentRetryCount) {
-        return currentRetryCount <= mDownloadRequest.getMaxRetryCount();
+        return currentRetryCount <= getMaxRetryCount();
     }
 
-    protected void onRequestOk(DownloadRequest downloadRequest){}
-    protected void onRequestPartial(DownloadRequest downloadRequest){}
-    protected void onResourceMoved(DownloadRequest downloadRequest){}
+    protected void onRequestOk(long totalSize){}
+    protected void onRequestPartial(){}
+    protected void onResourceMoved(){}
 
     /**
      * 解析请求成功的header字段
      * @param response 连接对象
      */
     private void parserOKHeader(Response response){
-        mDownloadRequest.setTotalSize(Utils.strToLong(response.header(CONTENT_LENGTH),0));
-        onRequestOk(mDownloadRequest);
+        mDownloadTaskInfo.totalSize = Utils.strToLong(response.header(CONTENT_LENGTH),0);
+        onRequestOk(mDownloadTaskInfo.totalSize);
     }
 
     /**
@@ -173,26 +172,6 @@ public class HttpDownloadTask extends AbsDownloadTask{
             return Long.parseLong(conn.getHeaderField(field));
         } catch (NumberFormatException e) {
             return defaultValue;
-        }
-    }
-
-    /**
-     * connection url.
-     * @param url Request download url.
-     * @return New HttpUrlConnection
-     * @throws IOException If openConnection error,the throw IOException.
-     */
-    private HttpURLConnection openConnection(URL url)throws IOException{
-        try {
-            HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-            httpURLConnection.setRequestMethod("GET");
-            httpURLConnection.setReadTimeout(mDownloadRequest.getTimeoutMs());
-            httpURLConnection.setConnectTimeout(mDownloadRequest.getTimeoutMs());
-            return httpURLConnection;
-        } catch (IOException e) {
-            DownloadLog.e(String.format("Download url:%s  " +
-                    "URL openConnection fail:%s",url.toString(),e.getMessage()));
-            throw e;
         }
     }
 

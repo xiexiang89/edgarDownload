@@ -1,6 +1,7 @@
 package com.edgar.download.observe;
 
 import com.edgar.download.DownloadRequest;
+import com.edgar.download.task.AbsDownloadTask;
 
 import java.io.File;
 
@@ -11,50 +12,51 @@ import java.io.File;
 public interface DownloadListener {
     /**
      * 线程运行调用
-     * @param downloadRequest
+     * @param downloadTask 下载任务
      */
-    void onRunning(DownloadRequest downloadRequest);
+    void onRunning(AbsDownloadTask downloadTask);
     /**
      * 开始传输文件会调用
-     * @param downloadRequest
+     * @param downloadTask 下载任务
      */
-    void onStart(DownloadRequest downloadRequest);
+    void onStart(AbsDownloadTask downloadTask);
     /**
      * 等待下载
-     * @param downloadRequest
      */
-    void onWait(DownloadRequest downloadRequest, String url);
+    void onWait(AbsDownloadTask downloadTask, String url);
     /**
      * 暂停下载
-     * @param downloadRequest
-     * @param url
-     * @param progress
+     * @param downloadTask 下载任务
+     * @param url 下载地址
      */
-    void onPause(DownloadRequest downloadRequest, String url, int progress);
+    void onPause(AbsDownloadTask downloadTask, String url);
     /**
      * 下载完成
-     * @param downloadRequest
-     * @param url
-     * @param filePath
+     * @param downloadTask 下载任务
+     * @param url 下载地址
+     * @param filePath 下载保存路径
      */
-    void onFinish(DownloadRequest downloadRequest, String url, File filePath);
+    void onFinish(AbsDownloadTask downloadTask, String url, File filePath);
     /**
      * 失败
-     * @param downloadRequest 下载任务对象
+     * @param downloadTask 下载任务对象
      * @param url 下载url
      * @param errorCode 失败码
      * @param errorMsg 失败消息
      */
-    void onFail(DownloadRequest downloadRequest, String url, int errorCode, String errorMsg);
+    void onFail(AbsDownloadTask downloadTask, String url, int errorCode, String errorMsg);
     /**
      * 取消会调用
-     * @param downloadRequest
-     * @param url
+     * @param downloadTask 下载任务
+     * @param url 下载地址
      */
-    void onCancel(DownloadRequest downloadRequest, String url);
+    void onCancel(AbsDownloadTask downloadTask, String url);
     /**
      * 进度更新
-     * @param downloadRequest
+     * @param downloadTask 下载任务
+     * @param totalSize 文件总大小
+     * @param currentSize  已经下载大小
+     * @param progress 计算好的进度
      */
-    void onUpdateProgress(DownloadRequest downloadRequest, String url, int progress);
+    void onUpdateProgress(AbsDownloadTask downloadTask, long totalSize,long currentSize,int progress);
 }

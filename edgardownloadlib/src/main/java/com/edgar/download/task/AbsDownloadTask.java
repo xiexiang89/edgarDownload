@@ -3,7 +3,7 @@ package com.edgar.download.task;
 import android.content.Context;
 
 import com.edgar.download.DownloadLog;
-import com.edgar.download.DownloadQueueManager;
+import com.edgar.download.DownloadManager;
 import com.edgar.download.DownloadRequest;
 import com.edgar.download.ErrorType;
 import com.edgar.download.Status;
@@ -28,16 +28,41 @@ import java.util.concurrent.ExecutorService;
  */
 public abstract class AbsDownloadTask implements Runnable{
     private static final Object LOCK = new Object();
-    private DownloadQueueManager mDownloadQueueManager;
-    protected final DownloadRequest mDownloadRequest;
+    private DownloadManager mDownloadManager;
+    protected final DownloadTaskInfo mDownloadTaskInfo;
     protected DownloadListener mDownloadListener;
     private Context mContext;
-    private File mSaveFile;
+
+    protected class DownloadTaskInfo{
+        String downloadUrl;
+        File saveFilePath;
+        long totalSize;
+        long currentSize;
+        int progress;
+        int status;
+        int failType;
+        String failMessage;
+        int maxRetryCount;
+        int timeoutMs;
+
+        public DownloadTaskInfo(DownloadRequest downloadRequest){
+            downloadUrl = downloadRequest.getDownloadUrl();
+            saveFilePath = new File(downloadRequest.getSaveFilePath());
+            totalSize = downloadRequest.getTotalSize();
+            currentSize = downloadRequest.getCurrentSize();
+            status = downloadRequest.getStatus();
+            maxRetryCount = downloadRequest.getMaxRetryCount();
+            timeoutMs = downloadRequest.getTimeoutMs();
+        }
+
+        public void changeStatus(int status){
+            this.status = status;
+        }
+    }
 
     public AbsDownloadTask(Context context, DownloadRequest downloadRequest){
         mContext = context;
-        mDownloadRequest = downloadRequest;
-        mSaveFile = new File(mDownloadRequest.getSaveFilePath());
+        mDownloadTaskInfo = new DownloadTaskInfo(downloadRequest);
     }
 
     @Override
@@ -52,13 +77,15 @@ public abstract class AbsDownloadTask implements Runnable{
             checkUserPauseOrStop();
             createParentFile();
             checkLocalFileValid();
-            onDownloading(mDownloadRequest);
+            mDownloadTaskInfo.changeStatus(Status.DOWNLOADING);
+            onDownloading();
             executeDownload();
             //Download finish.
             finishDownload();
         } catch (DownloadErrorException e){
             DownloadLog.e(e.getMessage());
-            onFailDownload(mDownloadRequest);
+            mDownloadTaskInfo.changeStatus(Status.FAIL);
+            onFailDownload();
             notifyFail();
         } catch (StopException e){
             notifyCancel();
@@ -71,68 +98,58 @@ public abstract class AbsDownloadTask implements Runnable{
 
     protected abstract void executeDownload()throws DownloadErrorException, StopException, PauseException;
     public void startDownload(ExecutorService executorService){
-        mDownloadRequest.setStatus(Status.START);
-        onStartDownload(mDownloadRequest);
+        mDownloadTaskInfo.changeStatus(Status.START);
+        onStartDownload();
         executorService.execute(this);
     }
 
     public void waitDownload(){
-        mDownloadRequest.setStatus(Status.WAIT);
-        onWaitDownload(mDownloadRequest);
+        mDownloadTaskInfo.changeStatus(Status.WAIT);
+        onWaitDownload();
         notifyWait();
     }
 
     /**
      * 开始下载调用
      */
-    protected void onStartDownload(DownloadRequest downloadRequest){}
+    protected void onStartDownload(){}
 
     /**
      * 正在下载调用
+     * @see Status#DOWNLOADING
      */
-    protected void onDownloading(DownloadRequest downloadRequest){
-        mDownloadRequest.setStatus(Status.DOWNLOADING);
-    }
-
+    protected void onDownloading(){}
     /**
      * 暂停下载调用
      */
-    protected void onPauseDownload(DownloadRequest downloadRequest){}
-
+    protected void onPauseDownload(){}
     /**
      * 取消下载调用
      */
-    protected void onCancelDownload(DownloadRequest downloadRequest){}
-
+    protected void onCancelDownload(){}
     /**
      * 完成下载
      */
-    protected void onFinishDownload(DownloadRequest downloadRequest){}
-
+    protected void onFinishDownload(){}
     /**
      * 任务等待时候会调用
-     * @param downloadRequest
      */
-    protected void onWaitDownload(DownloadRequest downloadRequest){}
+    protected void onWaitDownload(){}
 
     /**
      * 下载失败时候会调用
-     * @param downloadRequest 下载请求
      */
-    protected void onFailDownload(DownloadRequest downloadRequest){
-        mDownloadRequest.setStatus(Status.FAIL);
-    }
+    protected void onFailDownload(){}
 
     /**
      * 执行完成,不论下载失败成功都会调用
-     * @param downloadRequest 下载请求
      */
-    protected void onNextTask(DownloadRequest downloadRequest){}
+    protected void onNextTask(){}
     private void nextTask(){
         DownloadLog.e(String.format("Download status:%s",getStatus()));
-        onNextTask(mDownloadRequest);
-        if (mDownloadQueueManager != null){
-            mDownloadQueueManager.nextTask(this);
+        onNextTask();
+        if (mDownloadManager != null){
+            mDownloadManager.nextTask(this);
         }
     }
 
@@ -147,12 +164,12 @@ public abstract class AbsDownloadTask implements Runnable{
     private void checkLocalFileValid(){
         if (getCurrentSize() <= 0){
             //下载大小为0,删除文件.
-            if (mSaveFile.delete()){
-                DownloadLog.e("Delete old download file success:"+mSaveFile);
+            if (mDownloadTaskInfo.saveFilePath.delete()){
+                DownloadLog.e("Delete old download file success:"+mDownloadTaskInfo.saveFilePath);
             }
-        } else if (!mSaveFile.exists()){
+        } else if (!mDownloadTaskInfo.saveFilePath.exists()){
             //文件不存在,重置下载大小为0.
-            mDownloadRequest.setCurrentSize(0);
+            mDownloadTaskInfo.currentSize = 0;
         }
     }
 
@@ -201,18 +218,18 @@ public abstract class AbsDownloadTask implements Runnable{
     }
 
     public void pauseDownload() {
-        final int oldStatus = mDownloadRequest.getStatus();
-        mDownloadRequest.setStatus(Status.PAUSE);
-        onPauseDownload(mDownloadRequest);
+        final int oldStatus = mDownloadTaskInfo.status;
+        mDownloadTaskInfo.changeStatus(Status.PAUSE);
+        onPauseDownload();
         if (oldStatus == Status.WAIT){
             notifyPause();
         }
     }
 
     public void cancelDownload() {
-        final int oldStatus = mDownloadRequest.getStatus();
-        mDownloadRequest.setStatus(Status.CANCEL);
-        onCancelDownload(mDownloadRequest);
+        final int oldStatus = mDownloadTaskInfo.status;
+        mDownloadTaskInfo.changeStatus(Status.CANCEL);
+        onCancelDownload();
         if (oldStatus == Status.WAIT){
             notifyCancel();
         }
@@ -231,19 +248,15 @@ public abstract class AbsDownloadTask implements Runnable{
     }
 
     public int getErrorCode(){
-        return mDownloadRequest.getFailType();
+        return mDownloadTaskInfo.failType;
     }
 
     public String getErrorMessage(){
-        return mDownloadRequest.getFailMessage();
+        return mDownloadTaskInfo.failMessage;
     }
 
     public int getStatus() {
-        return mDownloadRequest.getStatus();
-    }
-
-    public boolean isSuccess() {
-        return getStatus() == Status.FINISHED;
+        return mDownloadTaskInfo.status;
     }
 
     public boolean isFinish(){
@@ -259,40 +272,44 @@ public abstract class AbsDownloadTask implements Runnable{
     }
 
     public String getDownloadUrl() {
-        return mDownloadRequest.getDownloadUrl();
+        return mDownloadTaskInfo.downloadUrl;
     }
 
     public long getCurrentSize() {
-        return mDownloadRequest.getCurrentSize();
+        return mDownloadTaskInfo.currentSize;
     }
 
     public long getTotalSize() {
-        return mDownloadRequest.getTotalSize();
+        return mDownloadTaskInfo.totalSize;
     }
 
     public int getProgress() {
-        return mDownloadRequest.getProgress();
+        return mDownloadTaskInfo.progress;
     }
 
     public String getName() {
-        return mSaveFile.getName();
-    }
-
-    public DownloadRequest getDownloadRequest(){
-        return mDownloadRequest;
+        return mDownloadTaskInfo.saveFilePath.getName();
     }
 
     public File getFile(){
-        return mSaveFile;
+        return mDownloadTaskInfo.saveFilePath;
     }
 
-    public void setDownloadQueueManager(DownloadQueueManager downloadQueueManager){
-        this.mDownloadQueueManager = downloadQueueManager;
+    public final int getMaxRetryCount(){
+        return mDownloadTaskInfo.maxRetryCount;
+    }
+
+    public final int getTimeoutMs(){
+        return mDownloadTaskInfo.timeoutMs;
+    }
+
+    public void setDownloadQueueManager(DownloadManager downloadManager){
+        this.mDownloadManager = downloadManager;
     }
 
     /**
      * Set downloadListener
-     * @param downloadListener
+     * @param downloadListener 下载监听
      */
     public void setDownloadListener(DownloadListener downloadListener){
         mDownloadListener = downloadListener;
@@ -310,7 +327,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onPause(mDownloadRequest,getDownloadUrl(),getProgress());
+                    mDownloadListener.onPause(AbsDownloadTask.this,getDownloadUrl());
                 }
             }
         });
@@ -321,7 +338,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onRunning(mDownloadRequest);
+                    mDownloadListener.onRunning(AbsDownloadTask.this);
                 }
             }
         });
@@ -335,7 +352,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onCancel(mDownloadRequest,getDownloadUrl());
+                    mDownloadListener.onCancel(AbsDownloadTask.this,getDownloadUrl());
                 }
             }
         });
@@ -346,7 +363,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onUpdateProgress(mDownloadRequest,getDownloadUrl(),getProgress());
+                    mDownloadListener.onUpdateProgress(AbsDownloadTask.this,getTotalSize(),getCurrentSize(),getProgress());
                 }
             }
         });
@@ -357,7 +374,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onWait(mDownloadRequest,getDownloadUrl());
+                    mDownloadListener.onWait(AbsDownloadTask.this,getDownloadUrl());
                 }
             }
         });
@@ -371,7 +388,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onStart(mDownloadRequest);
+                    mDownloadListener.onStart(AbsDownloadTask.this);
                 }
             }
         });
@@ -383,7 +400,7 @@ public abstract class AbsDownloadTask implements Runnable{
             public void run() {
                 if(mDownloadListener != null){
                     int failType = getErrorCode();
-                    mDownloadListener.onFail(mDownloadRequest,getDownloadUrl(),failType,getErrorMessage());
+                    mDownloadListener.onFail(AbsDownloadTask.this,getDownloadUrl(),failType,getErrorMessage());
                 }
             }
         });
@@ -394,7 +411,7 @@ public abstract class AbsDownloadTask implements Runnable{
             @Override
             public void run() {
                 if(mDownloadListener != null){
-                    mDownloadListener.onFinish(mDownloadRequest,getDownloadUrl(),mSaveFile);
+                    mDownloadListener.onFinish(AbsDownloadTask.this,getDownloadUrl(),mDownloadTaskInfo.saveFilePath);
                 }
             }
         });
@@ -415,15 +432,14 @@ public abstract class AbsDownloadTask implements Runnable{
      * @param failMessage 失败信息
      */
     protected void handlerDownloadFail(final int failType,final String failMessage){
-        mDownloadRequest.setStatus(Status.FAIL);
-        mDownloadRequest.setFailType(failType);
-        mDownloadRequest.setFailMessage(failMessage);
+        mDownloadTaskInfo.changeStatus(Status.FAIL);
+        mDownloadTaskInfo.failType = failType;
+        mDownloadTaskInfo.failMessage = failMessage;
     }
 
     protected void handlerNetworkFail(){
-        mDownloadRequest.setStatus(Status.FAIL);
-        mDownloadRequest.setFailType(ErrorType.NETWORK_ERROR);
-        mDownloadRequest.setFailMessage(mContext.getString(R.string.download_network_error));
+        handlerDownloadFail(ErrorType.NETWORK_ERROR,mContext.getString(R.string.download_network_error));
+
     }
 
     /**
@@ -431,19 +447,19 @@ public abstract class AbsDownloadTask implements Runnable{
      * @param readLen 读取长度
      */
     private void updateDownloadRequest(long readLen){
-        mDownloadRequest.setCurrentSize(readLen+getCurrentSize());
+        mDownloadTaskInfo.currentSize = readLen+getCurrentSize();
         final int downloadProgress = Utils.getProgress(getCurrentSize(),getTotalSize());
-        mDownloadRequest.setProgress(downloadProgress);
-        onUpdateProgress(mDownloadRequest.getTotalSize(),mDownloadRequest.getCurrentSize(),downloadProgress);
+        mDownloadTaskInfo.progress = downloadProgress;
+        onUpdateProgress(mDownloadTaskInfo.totalSize,mDownloadTaskInfo.currentSize,downloadProgress);
         notifyProgress();
     }
 
     protected void finishDownload(){
-        if(mDownloadQueueManager != null){
-            mDownloadQueueManager.finishTask(this);
+        if(mDownloadManager != null){
+            mDownloadManager.finishTask(this);
         }
-        mDownloadRequest.setStatus(Status.FINISHED);
-        onFinishDownload(mDownloadRequest);
+        mDownloadTaskInfo.changeStatus(Status.FINISHED);
+        onFinishDownload();
         notifyFinish();
     }
 
@@ -453,7 +469,7 @@ public abstract class AbsDownloadTask implements Runnable{
 
     protected void createParentFile()throws DownloadErrorException{
         synchronized (LOCK){
-            File parentFile = mSaveFile.getParentFile();
+            File parentFile = mDownloadTaskInfo.saveFilePath.getParentFile();
             if(!parentFile.exists()){
                 if(!parentFile.mkdirs()){
                     throw new DownloadErrorException(String.format("maker dir error:%s",parentFile.getAbsolutePath()));
@@ -465,7 +481,7 @@ public abstract class AbsDownloadTask implements Runnable{
     protected void writeToFile(RandomAccessFile randomAccessFile, byte[] buffers, int readLen)throws DownloadErrorException {
         try {
             //文件不存在,可能被用户在文件管理器中删除,这个时候没必要再次写,暂停下载.
-            if(!isCancelDownload() && !mSaveFile.exists()){
+            if(!isCancelDownload() && !mDownloadTaskInfo.saveFilePath.exists()){
                 pauseDownload();
                 return;
             }
@@ -473,13 +489,13 @@ public abstract class AbsDownloadTask implements Runnable{
             updateDownloadRequest(readLen);
         } catch (IOException e){
             handlerDownloadFail(ErrorType.IO_ERROR,mContext.getString(R.string.download_io_error));
-            throwDownloadErrorException(String.format("Write file name:%s,error:%s",mSaveFile.getAbsolutePath(),e.getMessage()));
+            throwDownloadErrorException(String.format("Write file name:%s,error:%s",mDownloadTaskInfo.saveFilePath.getAbsolutePath(),e.getMessage()));
         }
     }
 
     protected RandomAccessFile createAndSeekFile(long position)throws DownloadErrorException{
         try {
-            RandomAccessFile randomAccessFile = new RandomAccessFile(mSaveFile,"rw");
+            RandomAccessFile randomAccessFile = new RandomAccessFile(mDownloadTaskInfo.saveFilePath,"rw");
             randomAccessFile.seek(position);
             return randomAccessFile;
         } catch (IOException e){
@@ -493,7 +509,7 @@ public abstract class AbsDownloadTask implements Runnable{
             return inputStream.read(buffer);
         } catch (IOException e){
             handlerNetworkFail();
-            throw new DownloadErrorException(String.format("Read buffer fail:%s,errorMessage:%s",mSaveFile.getAbsolutePath(),e.getMessage()));
+            throw new DownloadErrorException(String.format("Read buffer fail:%s,errorMessage:%s",mDownloadTaskInfo.saveFilePath,e.getMessage()));
         }
     }
 }

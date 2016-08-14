@@ -6,7 +6,7 @@ import android.content.Intent;
 import android.net.ConnectivityManager;
 
 import com.edgar.download.DownloadLog;
-import com.edgar.download.DownloadQueueManager;
+import com.edgar.download.DownloadManager;
 import com.edgar.download.utils.Utils;
 
 /**
@@ -15,10 +15,10 @@ import com.edgar.download.utils.Utils;
  */
 public final class NetworkObserve extends BroadcastReceiver {
 
-    private DownloadQueueManager mDownloadQueueManager;
+    private DownloadManager mDownloadManager;
 
-    public NetworkObserve(DownloadQueueManager downloadQueueManager){
-        mDownloadQueueManager = downloadQueueManager;
+    public NetworkObserve(DownloadManager downloadManager){
+        mDownloadManager = downloadManager;
     }
 
     @Override
@@ -27,7 +27,7 @@ public final class NetworkObserve extends BroadcastReceiver {
             final int networkType = Utils.getConnectedType(context);
             if (networkType == ConnectivityManager.TYPE_MOBILE){
                 DownloadLog.e("Current network type is mobile:"+networkType);
-                mDownloadQueueManager.pauseAllDownload();
+                mDownloadManager.pauseAllDownload();
             }
         }
     }

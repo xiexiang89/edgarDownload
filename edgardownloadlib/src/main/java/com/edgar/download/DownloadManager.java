@@ -10,6 +10,7 @@ import android.os.Message;
 
 import com.edgar.download.observe.NetworkObserve;
 import com.edgar.download.task.AbsDownloadTask;
+import com.edgar.download.task.HttpDownloadTask;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,7 +23,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 /**
  * Created by Edgar on 2016/4/20.
  */
-public class DownloadQueueManager {
+public class DownloadManager {
 
     private static final int MAX_QUEUE_SIZE = 1;   //Max download queue is 2.
     private static final int MSG_NEXT_TASK = 0;
@@ -32,9 +33,10 @@ public class DownloadQueueManager {
     private final ConcurrentLinkedQueue<AbsDownloadTask> mWaitDownloadList = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<AbsDownloadTask> mDownloadingList = new ConcurrentLinkedQueue<>();
 
-    private static volatile DownloadQueueManager sInstance;
+    private static volatile DownloadManager sInstance;
     private Context mAppContext;
     private BroadcastReceiver mNetworkMonitor;
+    private TaskCreateFactory mTaskCreateFactory;
     private ThreadPoolExecutor mDownloadExecutor;
     private int mMaxQueueSize = MAX_QUEUE_SIZE;
     private final Handler mNextTaskHandler = new Handler(Looper.getMainLooper()){
@@ -54,17 +56,17 @@ public class DownloadQueueManager {
         }
     };
 
-    private DownloadQueueManager(Context context){
+    private DownloadManager(Context context){
         mAppContext = context.getApplicationContext();
         mDownloadExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(mMaxQueueSize);
         registerNetworkReceiver();
     }
 
-    public static DownloadQueueManager getInstance(Context context){
+    public static DownloadManager getInstance(Context context){
         if (sInstance == null){
-            synchronized (DownloadQueueManager.class){
+            synchronized (DownloadManager.class){
                 if (sInstance == null){
-                    sInstance = new DownloadQueueManager(context);
+                    sInstance = new DownloadManager(context);
                 }
             }
         }
@@ -82,11 +84,20 @@ public class DownloadQueueManager {
         mAppContext.unregisterReceiver(mNetworkMonitor);
     }
 
-    public void addDownloadTask(AbsDownloadTask downloadTask){
-        if(downloadTask != null){
-            downloadTask.setDownloadQueueManager(this);
-            executorDownload(downloadTask);
+    public AbsDownloadTask addDownloadTask(DownloadRequest downloadRequest){
+        if (downloadRequest == null) return null;
+        if (mTaskCreateFactory == null){
+            mTaskCreateFactory = new TaskCreateFactory() {
+                @Override
+                public AbsDownloadTask create(DownloadRequest downloadRequest) {
+                    return new HttpDownloadTask(mAppContext,downloadRequest);
+                }
+            };
         }
+        AbsDownloadTask downloadTask = mTaskCreateFactory.create(downloadRequest);
+        downloadTask.setDownloadQueueManager(this);
+        executorDownload(downloadTask);
+        return downloadTask;
     }
 
     private void executorDownload(AbsDownloadTask downloadTask){
@@ -111,6 +122,10 @@ public class DownloadQueueManager {
                 mWaitDownloadList.add(downloadTask);
             }
         }
+    }
+
+    public void resumeDownloadTask(AbsDownloadTask downloadTask){
+        executorDownload(downloadTask);
     }
 
     public void removeDownload(AbsDownloadTask downloadTask){
@@ -177,6 +192,10 @@ public class DownloadQueueManager {
     public void nextTask(AbsDownloadTask downloadTask){
         mDownloadingList.remove(downloadTask);
         mNextTaskHandler.sendEmptyMessage(MSG_NEXT_TASK);
+    }
+
+    public void configTaskCreateFactory(TaskCreateFactory taskCreateFactory) {
+        mTaskCreateFactory = taskCreateFactory;
     }
 
     public void release(){
