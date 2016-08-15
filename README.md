@@ -16,3 +16,5 @@ Android下载库,已经用于公司产品中；还未提供下载示例.
 3.HttpDownloadTask:
   默认的下载任务, 看名字应该懂,Http下载，默认使用http下载,
   可能有些需要socket下载,可以继承AbsDownloadTask.
+
+备注:持续维护中的项目.
